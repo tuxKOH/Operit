@@ -37,8 +37,10 @@ import com.ai.assistance.operit.R
 import com.ai.assistance.operit.api.chat.AIForegroundService
 import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.data.preferences.AgreementPreferences
+import com.ai.assistance.operit.data.preferences.DisplayPreferencesManager
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
 import com.ai.assistance.operit.data.preferences.androidPermissionPreferences
+import com.ai.assistance.operit.data.repository.ChatHistoryManager
 import com.ai.assistance.operit.data.updates.UpdateManager
 import com.ai.assistance.operit.data.updates.UpdateStatus
 import com.ai.assistance.operit.ui.common.NavItem
@@ -54,6 +56,7 @@ import com.ai.assistance.operit.util.AnrMonitor
 import com.ai.assistance.operit.util.LocaleUtils
 import java.util.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.ai.assistance.operit.data.mcp.MCPRepository
 import android.content.Intent
@@ -378,6 +381,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private suspend fun prepareStartupChatIfNeeded() {
+        try {
+            val displayPreferencesManager =
+                DisplayPreferencesManager.getInstance(this@MainActivity)
+            if (!displayPreferencesManager.startWithNewChat.first()) {
+                return
+            }
+
+            val chatHistoryManager = ChatHistoryManager.getInstance(this@MainActivity)
+            val newChat = chatHistoryManager.createNewChat(
+                setAsCurrentChat = false
+            )
+            chatHistoryManager.setOpeningStatementSuppressed(newChat.id, true)
+            chatHistoryManager.setCurrentChatId(newChat.id)
+            AppLogger.d(TAG, "启动时已创建新的空白聊天")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "启动时创建空白聊天失败", e)
+        }
+    }
+
     private fun parseRouteArgsJson(raw: String?): Map<String, Any?> {
         val text = raw?.trim().orEmpty()
         if (text.isBlank()) {
@@ -409,6 +432,8 @@ class MainActivity : ComponentActivity() {
 
             // 2. 检查权限级别设置
             checkPermissionLevelSet()
+
+            prepareStartupChatIfNeeded()
 
             // 3. 在协议已接受且无需权限引导时，启动插件加载
             if (!showPermissionGuide && agreementPreferences.isAgreementAccepted()) {

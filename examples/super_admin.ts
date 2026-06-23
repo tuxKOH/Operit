@@ -41,7 +41,7 @@ METADATA
             "parameters": [
                 {
                     "name": "sessionId",
-                    "description": { "zh": "可选目标会话ID。不传则使用默认会话 super_admin_default_session。", "en": "Optional target session ID. If omitted, uses default session super_admin_default_session." },
+                    "description": { "zh": "可选目标会话ID。不传则使用当前对话的默认会话；无 chatId 时为 super_admin_default_session。", "en": "Optional target session ID. If omitted, uses the current chat's default session; without chatId it is super_admin_default_session." },
                     "type": "string",
                     "required": false
                 },
@@ -96,6 +96,35 @@ const superAdmin = (function () {
     const DEFAULT_FOREGROUND_TIMEOUT_MS = 15_000;
     const DEFAULT_WAIT_TIMEOUT_MS = 300_000;
     const MIN_TIMEOUT_MS = 3_000;
+    const DEFAULT_TERMINAL_SESSION_NAME = "super_admin_default_session";
+    const BACKGROUND_TERMINAL_SESSION_PREFIX = "super_admin_background";
+
+    function getCurrentChatSessionSuffix(): string {
+        const chatId = getChatId();
+        if (chatId === undefined) {
+            return "";
+        }
+        const normalizedChatId = chatId.trim();
+        if (!normalizedChatId) {
+            return "";
+        }
+        return normalizedChatId.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    }
+
+    function getDefaultTerminalSessionName(): string {
+        const chatSuffix = getCurrentChatSessionSuffix();
+        return chatSuffix
+            ? `${DEFAULT_TERMINAL_SESSION_NAME}_${chatSuffix}`
+            : DEFAULT_TERMINAL_SESSION_NAME;
+    }
+
+    function getBackgroundTerminalSessionName(): string {
+        const chatSuffix = getCurrentChatSessionSuffix();
+        const prefix = chatSuffix
+            ? `${BACKGROUND_TERMINAL_SESSION_PREFIX}_${chatSuffix}`
+            : BACKGROUND_TERMINAL_SESSION_PREFIX;
+        return `${prefix}_${Date.now()}`;
+    }
 
     async function persistTerminalOutputIfTooLong(command: string, result: any): Promise<any | null> {
         const outputStr = typeof result?.output === "string"
@@ -162,7 +191,7 @@ const superAdmin = (function () {
             }
 
             if (isBackground) {
-                const session = await Tools.System.terminal.create(`super_admin_background_${Date.now()}`);
+                const session = await Tools.System.terminal.create(getBackgroundTerminalSessionName());
                 const sessionId = session.sessionId;
 
                 // 调用系统工具执行终端命令
@@ -184,7 +213,7 @@ const superAdmin = (function () {
             }
 
             // 创建或获取一个默认会话
-            const session = await Tools.System.terminal.create("super_admin_default_session");
+            const session = await Tools.System.terminal.create(getDefaultTerminalSessionName());
             const sessionId = session.sessionId;
 
             // 调用系统工具执行终端命令
@@ -232,7 +261,7 @@ const superAdmin = (function () {
     /**
      * 等待同一终端会话中的上一条命令执行完成
      * 原理：向同会话追加一个内部 marker 命令。由于会话按序执行，marker 开始执行即代表前序命令已完成。
-     * @param sessionId - 可选会话ID；不传时使用 super_admin_default_session
+     * @param sessionId - 可选会话ID；不传时使用当前对话的默认会话，无 chatId 时为 super_admin_default_session
      * @param timeoutMs - 可选超时（毫秒，最低 3000ms）；未传默认 300000ms
      */
     async function terminal_wait(params: { sessionId?: string, timeoutMs?: string } = {}): Promise<any> {
@@ -250,7 +279,7 @@ const superAdmin = (function () {
             const session =
                 params.sessionId
                     ? { sessionId: params.sessionId }
-                    : await Tools.System.terminal.create("super_admin_default_session");
+                    : await Tools.System.terminal.create(getDefaultTerminalSessionName());
             const sessionId = session.sessionId;
 
             const marker = `__OPERIT_TERMINAL_WAIT_DONE_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}__`;
@@ -329,7 +358,7 @@ const superAdmin = (function () {
      */
     async function terminal_getscreen(_params: {} = {}): Promise<any> {
         try {
-            const session = await Tools.System.terminal.create("super_admin_default_session");
+            const session = await Tools.System.terminal.create(getDefaultTerminalSessionName());
             const sessionId = session.sessionId;
             const result = await Tools.System.terminal.screen(sessionId);
             return {
@@ -357,7 +386,7 @@ const superAdmin = (function () {
                 throw new Error("input和control至少需要提供一个");
             }
 
-            const session = await Tools.System.terminal.create("super_admin_default_session");
+            const session = await Tools.System.terminal.create(getDefaultTerminalSessionName());
             const sessionId = session.sessionId;
             const result = await Tools.System.terminal.input(sessionId, {
                 input: params.input,
